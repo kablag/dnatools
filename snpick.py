@@ -1,5 +1,7 @@
 import sys
 from enum import Enum
+import yaml
+import pickle
 
 from PySide import QtCore
 from PySide import QtGui
@@ -349,7 +351,9 @@ class Snpick(QtGui.QWidget):
         self.calcProbes.clicked.connect(self.onCalcProbesPressed)
 
         self.saveBtn = QtGui.QPushButton(text='Save')
+        self.saveBtn.clicked.connect(self.onSaveButtonPressed)
         self.loadBtn = QtGui.QPushButton(text='Load')
+        self.loadBtn.clicked.connect(self.onLoadButtonPressed)
         self.batchCalcBtn = QtGui.QPushButton(text='Batch Calc')
 
         self.tabs = QtGui.QTabWidget()
@@ -375,6 +379,11 @@ class Snpick(QtGui.QWidget):
         self.calcProbes.setSizePolicy(sizePolicy)
         hbox.addWidget(self.calcProbes)
         hbox.addStretch(1)
+        hbox.addWidget(self.saveBtn)
+        hbox.addWidget(self.loadBtn)
+        hbox.addStretch(1)
+        hbox.addWidget(self.batchCalcBtn)
+        hbox.addStretch(1)
         rangeInputs = QtGui.QWidget()
         rangeInputs.setLayout(hbox)
         vbox.addWidget(rangeInputs)
@@ -387,6 +396,13 @@ class Snpick(QtGui.QWidget):
     def resizeEvent(self, event):
         self.tabs.setBaseSize(self.tabs.width(),
                               event.size().height() * 0.8)
+
+    def add_data_to_tabs(self):
+        if not self.mtask.canceled:
+            self.tab_A.addData(self.mtask)
+            self.tab_B.addData(self.mtask)
+            self.tab_Am.addData(self.mtask)
+            self.tab_Bm.addData(self.mtask)
 
     def onCalcProbesPressed(self):
         mtask = '{sequence}{min_p}->{max_p}'.format(
@@ -406,11 +422,25 @@ class Snpick(QtGui.QWidget):
         self.pd.canceled.connect(self.cancel_melting)
         self.mtask.execute(M_CONDS)
         self.calcProbes.setEnabled(True)
-        if not self.mtask.canceled:
-            self.tab_A.addData(self.mtask)
-            self.tab_B.addData(self.mtask)
-            self.tab_Am.addData(self.mtask)
-            self.tab_Bm.addData(self.mtask)
+        self.add_data_to_tabs()
+
+    def onSaveButtonPressed(self):
+        filename, filter = QtGui.QFileDialog.getSaveFileName(self,
+                                                     'Save project',
+                                                     '/home/kablag/Документы/snpick')
+        if filename != '':
+            with open(filename, 'w') as f:
+                # print(yaml.dump(self.mtask.melting_pots), file=f)
+                pickle.dump(self.mtask, f)
+
+    def onLoadButtonPressed(self):
+        filename, filter = QtGui.QFileDialog.getOpenFileName(self,
+                                                     'Load project',
+                                                     '/home/kablag/Документы/snpick')
+        if filename != '':
+            with open(filename, 'r') as f:
+                self.mtask = yaml.load(f.read())
+                self.add_data_to_tabs()
 
     @QtCore.Slot()
     def cancel_melting(self):

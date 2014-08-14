@@ -13,7 +13,6 @@ from PySide import QtCore
 
 from dnatools import reverse_complement
 from dnatools import calcGC
-
 SIMPLE_TASK_PATTERN = r'[atgc]*$'
 BEFORE_PATTERN = r'(?P<before>[atgc]*)'
 AFTER_PATTERN = r'(?P<after>[atgc]*$)'
@@ -166,17 +165,9 @@ class MeltingPotSNP(MeltingPot):
     def t90_AmB(self):
         return self.__t90_AmB
 
-    def melt(self, conditions):
-        self.__conditions = conditions
+    def calc_t_at_c_points(self):
         c10 = self.__conditions.a_conc * 0.1
         c90 = self.__conditions.a_conc * 0.9
-        self.__mpointsAB, self.__mpointsABm,\
-            self.__mpointsAmBm, self.__mpointsAmB =\
-            melt_snp(self.a,
-                            self.b,
-                            self.__am,
-                            self.__bm,
-                            self.__conditions)
         ts_a_b = calc_t_at_conc([c10, c90], self.__mpointsAB)
         try:
             self.__t10_AB = round(ts_a_b[c10], 1)
@@ -213,6 +204,17 @@ class MeltingPotSNP(MeltingPot):
             self.__t90_AmB = round(ts_am_b[c90], 1)
         except TypeError:
             pass
+
+    def melt(self, conditions):
+        self.__conditions = conditions
+        self.__mpointsAB, self.__mpointsABm,\
+            self.__mpointsAmBm, self.__mpointsAmB =\
+            melt_snp(self.a,
+                            self.b,
+                            self.__am,
+                            self.__bm,
+                            self.__conditions)
+        self.calc_t_at_c_points()
         self.meltDone.emit()
 
     def __str__(self):
@@ -222,15 +224,16 @@ class MeltingPotSNP(MeltingPot):
         return 'A : {a}\nB : {b}\nAm: {am}\nBm: {bm}'.format(
             a=self.a, b=self.b,
                                  am=self.am, bm=self.bm)
-
-class MTask(QtCore.QObject):
-    class TaskType(Enum):
+class TaskType(Enum):
         simple = 0
         snp = 1
         snp_shift = 2
         mismatch = 3
         cut_range = 4
         error = 5
+        
+class MTask(QtCore.QObject):
+    
 
     meltingPotDone = QtCore.Signal(int)
 
@@ -238,7 +241,7 @@ class MTask(QtCore.QObject):
         QtCore.QObject.__init__(self)
         self.__task = None
         self.__melting_pots = []
-        self.__task_type = self.TaskType.error
+        self.__task_type = TaskType.error
         self.task = mtask
         self.probeMin = None
         self.probeMax = None
@@ -263,27 +266,27 @@ class MTask(QtCore.QObject):
         self.__task = task.replace("\n", "")
         self.__melting_pots = []
         patterns = {re.compile(SIMPLE_TASK_PATTERN, re.IGNORECASE):
-                        self.TaskType.simple,
+                        TaskType.simple,
                     re.compile(SNP_TASK_PATTERN, re.IGNORECASE):
-                        self.TaskType.snp,
+                        TaskType.snp,
                     re.compile(SNP_TASK_WITH_SHIFT_PATTERN, re.IGNORECASE):
-                        self.TaskType.snp_shift,
+                        TaskType.snp_shift,
                     re.compile(MISMATCH_TASK_PATTERN, re.IGNORECASE):
-                        self.TaskType.mismatch,
+                        TaskType.mismatch,
                     re.compile(RANGE_TASK_PATTERN, re.IGNORECASE):
-                        self.TaskType.cut_range,
+                        TaskType.cut_range,
         }
-        self.__task_type = self.TaskType.error
+        self.__task_type = TaskType.error
         match_result = None
         for pat in patterns:
             match_result = pat.match(self.__task)
             if match_result:
                 self.__task_type = patterns[pat]
                 break
-        if self.__task_type is self.TaskType.simple:
+        if self.__task_type is TaskType.simple:
             self.__melting_pots = [MeltingPot(self.__task,
                                               reverse_complement(self.__task))]
-        elif self.__task_type is self.TaskType.cut_range:
+        elif self.__task_type is TaskType.cut_range:
             before = match_result.group('before')
             variable = match_result.group('range')
             after = match_result.group('after')
@@ -299,7 +302,7 @@ class MTask(QtCore.QObject):
                 reverse_complement(''.join([before, variable, after]))
             )
                                    for variable in variable_parts]
-        elif self.__task_type is self.TaskType.mismatch:
+        elif self.__task_type is TaskType.mismatch:
             before = match_result.group('before')
             a = match_result.group('a')
             b = match_result.group('b')
@@ -309,7 +312,7 @@ class MTask(QtCore.QObject):
                            reverse_complement(''.join(
                                [before, b, after])))
             ]
-        elif self.__task_type is self.TaskType.snp:
+        elif self.__task_type is TaskType.snp:
             before = match_result.group('before')
             wt = match_result.group('wt')
             mut = match_result.group('mut')
@@ -328,7 +331,7 @@ class MTask(QtCore.QObject):
                            reverse_complement(''.join(
                                [before, wt, after]))),
             ]
-        elif self.__task_type is self.TaskType.snp_shift:
+        elif self.__task_type is TaskType.snp_shift:
             before = match_result.group('before').lower()
             before_len = len(before)
             wt = match_result.group('wt').upper()
@@ -368,7 +371,7 @@ class MTask(QtCore.QObject):
                     self.melting_pots.append(
                         new_pot(wt, wt_len, mut, mut_len)
                     )
-        elif self.__task_type is self.TaskType.error:
+        elif self.__task_type is TaskType.error:
             raise MTaskParsingError
         else:
             raise MTaskParsingError
