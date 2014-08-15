@@ -10,18 +10,18 @@ from PySide import QtNetwork
 from pyfold import MTask
 from pyfold import MeltingConditions
 
-PORT          = 49200
+PROJECTS_FOLDER = '/home/kablag/Документы/snpick/'
 UNAFOLD_PATH = ''
 RAM_DISK = '/home/kablag/.ramdisk/'
 
 SLIDER_RATE = 10
 
-A_CONC = 2e-7
-C_10 = A_CONC * 0.1
-C_90 = A_CONC * 0.9
+A_CONC = '2.0e-07'
+C_10 = float(A_CONC) * 0.1
+C_90 = float(A_CONC) * 0.9
 
 M_CONDS = MeltingConditions(UNAFOLD_PATH, RAM_DISK, '30', '90',
-                            '1', A_CONC, '5e-2', '3e-3')
+                            '1', A_CONC, '5.0e-02', '3.0e-03')
 
 class COLUMNS(Enum):
     ID = 0
@@ -211,6 +211,7 @@ class FilterTab(QtGui.QWidget):
 
     def addData(self, mtask:MTask):
         melts_to_show = mtask.melting_pots
+
         def add_row(melt_show_mpot, id):
             pos = melt_show_mpot.position
             if self.name == 'A':
@@ -304,9 +305,17 @@ class FilterTab(QtGui.QWidget):
         self.filterRows()
 
     def showDataInTable(self):
+        self.dataTable = MyTableWidget(0, len(COLUMNS))
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Expanding)
+        self.dataTable.setSizePolicy(sizePolicy)
+        self.dataTable.setHorizontalHeaderLabels(
+            [name for name, member in COLUMNS.__members__.items()])
+        self.dataTable.setHidden(COLUMNS.ID.value)
+        self.dataTable.resizeColumnsToContents()
         self.dataTable.setSortingEnabled(False)
+
         # self.dataTable.clearContents()
-        self.dataTable.clear()
+
         for d_row in self.rows:
             self.dataTable.insertRow(0)
             self.dataTable.setItem(0, COLUMNS.ID.value,
@@ -338,6 +347,8 @@ class Snpick(QtGui.QWidget):
         self.init_ui()
 
     def init_ui(self):
+        self.name = QtGui.QLineEdit()
+        self.name.setText('Name')
         self.seqInput = QtGui.QLineEdit()
         self.seqInput.setText('tcccctccaggccgtgcataaggctgtgctgaccatcgac(A>G)agaaagggactgaagctgctggggccatgtttttagaggc')
 
@@ -348,13 +359,14 @@ class Snpick(QtGui.QWidget):
         self.probeMax.setText('17')
 
         self.calcProbes = QtGui.QPushButton(text='Calc')
-        self.calcProbes.clicked.connect(self.onCalcProbesPressed)
+        self.calcProbes.clicked.connect(self.onCalcProbesClicked)
 
         self.saveBtn = QtGui.QPushButton(text='Save')
-        self.saveBtn.clicked.connect(self.onSaveButtonPressed)
+        self.saveBtn.clicked.connect(self.onSaveButtonClicked)
         self.loadBtn = QtGui.QPushButton(text='Load')
-        self.loadBtn.clicked.connect(self.onLoadButtonPressed)
+        self.loadBtn.clicked.connect(self.onLoadButtonClicked)
         self.batchCalcBtn = QtGui.QPushButton(text='Batch Calc')
+        self.batchCalcBtn.clicked.connect(self.onBatchButtonClicked)
 
         self.tabs = QtGui.QTabWidget()
         self.tab_A = FilterTab('A')
@@ -368,6 +380,7 @@ class Snpick(QtGui.QWidget):
         self.tabs.addTab(self.tab_Bm, 'Bm')
 
         vbox = QtGui.QVBoxLayout()
+        vbox.addWidget(self.name)
         vbox.addWidget(self.seqInput)
         # vbox.addStretch(1)
         hbox = QtGui.QHBoxLayout()
@@ -404,7 +417,7 @@ class Snpick(QtGui.QWidget):
             self.tab_Am.addData(self.mtask)
             self.tab_Bm.addData(self.mtask)
 
-    def onCalcProbesPressed(self):
+    def onCalcProbesClicked(self):
         mtask = '{sequence}{min_p}->{max_p}'.format(
             sequence=self.seqInput.text(),
             min_p=self.probeMin.text(),
@@ -424,24 +437,73 @@ class Snpick(QtGui.QWidget):
         self.calcProbes.setEnabled(True)
         self.add_data_to_tabs()
 
-    def onSaveButtonPressed(self):
-        filename, filter = QtGui.QFileDialog.getSaveFileName(self,
+    def onSaveButtonClicked(self, filename=''):
+        filename, filter = filename, '' if filename != '' else QtGui.QFileDialog.getSaveFileName(self,
                                                      'Save project',
-                                                     '/home/kablag/Документы/snpick')
+                                                     PROJECTS_FOLDER+self.name.text())
         if filename != '':
             with open(filename, 'w') as f:
                 # print(yaml.dump(self.mtask.melting_pots), file=f)
-                pickle.dump(self.mtask, f)
+                # pickle.dump(self.mtask, f)
 
-    def onLoadButtonPressed(self):
+                conditions = {'unafold_path': M_CONDS.unafold_path,
+                              'ram_disk': M_CONDS.ram_disk,
+                              't_min': M_CONDS.t_min,
+                              't_max': M_CONDS.t_max,
+                              't_increment': M_CONDS.t_increment,
+                              'a_conc': M_CONDS.a_conc,
+                              'Na_conc': M_CONDS.Na_conc,
+                              'Mg_conc': M_CONDS.Mg_conc,}
+                mpots = [{'A':mpot.a,
+                          'B':mpot.b,
+                          'Am':mpot.am,
+                          'Bm':mpot.bm,
+                          'position':mpot.position,
+                          't10_AB':mpot.t10_AB,
+                          't10_ABm':mpot.t10_ABm,
+                          't10_AmBm':mpot.t10_AmBm,
+                          't10_AmB':mpot.t10_AmB,
+                          't90_AB':mpot.t90_AB,
+                          't90_ABm':mpot.t90_ABm,
+                          't90_AmBm':mpot.t90_AmBm,
+                          't90_AmB':mpot.t90_AmB,} for mpot in self.mtask.melting_pots]
+                dump = {'name':self.name.text(),
+                        'task':self.mtask.task,
+                        'probeMin':self.probeMin.text(),
+                        'probeMax':self.probeMax.text(),
+                        'conditions': conditions,
+                        'mpots': mpots,}
+                print(yaml.dump(dump), file=f)
+
+
+    def onLoadButtonClicked(self):
         filename, filter = QtGui.QFileDialog.getOpenFileName(self,
                                                      'Load project',
                                                      '/home/kablag/Документы/snpick')
         if filename != '':
             with open(filename, 'r') as f:
-                self.mtask = yaml.load(f.read())
+                dump = yaml.load(f.read())
+                M_CONDS.fromYAML(dump['conditions'])
+                self.name.setText(dump['name'])
+                self.seqInput.setText(dump['task'])
+                self.probeMin.setText(dump['probeMin'])
+                self.probeMax.setText(dump['probeMax'])
+                self.mtask = MTask(dump['task'], dump)
                 self.add_data_to_tabs()
 
+    def onBatchButtonClicked(self):
+        filename, filter = QtGui.QFileDialog.getOpenFileName(self,
+                                                     'Load batch',
+                                                     PROJECTS_FOLDER)
+        if filename != '':
+            with open(filename, 'r') as f:
+                tasks = f.readlines()
+                for task in tasks:
+                    name, sequence = task.split('\t')
+                    self.name.setText(name)
+                    self.seqInput.setText(sequence)
+                    self.onCalcProbesClicked()
+                    self.onSaveButtonClicked(PROJECTS_FOLDER + name)
     @QtCore.Slot()
     def cancel_melting(self):
         self.pd.close()

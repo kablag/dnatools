@@ -8,6 +8,7 @@ import time
 import shutil
 import subprocess
 import concurrent.futures
+import yaml
 
 from PySide import QtCore
 
@@ -87,8 +88,8 @@ class MeltingPot(QtCore.QObject):
 
     def melt(self, conditions):
         self.__conditions = conditions
-        c10 = self.__conditions.a_conc * 0.1
-        c90 = self.__conditions.a_conc * 0.9
+        c10 = float(self.__conditions.a_conc) * 0.1
+        c90 = float(self.__conditions.a_conc) * 0.9
         self.__mpoints = melt(self.__a,
                             self.__b,
                             self.__conditions)
@@ -102,7 +103,7 @@ class MeltingPot(QtCore.QObject):
         return '{a}\n{b}'.format(a=self.a, b=self.b)
 
 class MeltingPotSNP(MeltingPot):
-    def __init__(self, a, b, am, bm, position):
+    def __init__(self, a, b, am, bm, position, mpot=None):
         # super(MeltingPotSNP, self).__init__(a, b)
         MeltingPot.__init__(self, a, b)
         self.__am = am
@@ -120,6 +121,16 @@ class MeltingPotSNP(MeltingPot):
         self.__t90_ABm = None
         self.__t90_AmBm = None
         self.__t90_AmB = None
+        if mpot:
+            self.__t10_AB = mpot['t10_AB']
+            self.__t10_ABm = mpot['t10_ABm']
+            self.__t10_AmBm = mpot['t10_AmBm']
+            self.__t10_AmB = mpot['t10_AmB']
+            self.__t90_AB = mpot['t90_AB']
+            self.__t90_ABm = mpot['t90_ABm']
+            self.__t90_AmBm = mpot['t90_AmBm']
+            self.__t90_AmB = mpot['t90_AmB']
+
 
     @property
     def am(self):
@@ -166,8 +177,8 @@ class MeltingPotSNP(MeltingPot):
         return self.__t90_AmB
 
     def calc_t_at_c_points(self):
-        c10 = self.__conditions.a_conc * 0.1
-        c90 = self.__conditions.a_conc * 0.9
+        c10 = float(self.__conditions.a_conc) * 0.1
+        c90 = float(self.__conditions.a_conc) * 0.9
         ts_a_b = calc_t_at_conc([c10, c90], self.__mpointsAB)
         try:
             self.__t10_AB = round(ts_a_b[c10], 1)
@@ -217,6 +228,7 @@ class MeltingPotSNP(MeltingPot):
         self.calc_t_at_c_points()
         self.meltDone.emit()
 
+
     def __str__(self):
         return '{a}\n{b}\n{am}\n{bm}'.format(a=self.a, b=self.b,
                                  am=self.am, bm=self.bm)
@@ -237,7 +249,7 @@ class MTask(QtCore.QObject):
 
     meltingPotDone = QtCore.Signal(int)
 
-    def __init__(self, mtask):
+    def __init__(self, mtask, mtaskYAML=None):
         QtCore.QObject.__init__(self)
         self.__task = None
         self.__melting_pots = []
@@ -247,6 +259,16 @@ class MTask(QtCore.QObject):
         self.probeMax = None
         self.mPotsReady = 0
         self.canceled = False
+        if mtaskYAML:
+            self.probeMin = mtaskYAML['probeMin']
+            self.probeMax = mtaskYAML['probeMax']
+            self.__melting_pots = \
+                [MeltingPotSNP(mpot['A'],
+                               mpot['B'],
+                               mpot['Am'],
+                               mpot['Bm'],
+                               mpot['position'],
+                               mpot,) for mpot in mtaskYAML['mpots']]
 
     @property
     def melting_pots(self):
@@ -527,8 +549,13 @@ def melt_snp(seq_a, seq_b, seq_am, seq_bm, conditions):
 
 class MeltingConditions():
     def __init__(self, unafold_path, ram_disk, t_min=30, t_max=90,
-                 t_increment=1, a_conc=2e-7, Na_conc='5e-2', Mg_conc='3e-3'):
+                 t_increment=1, a_conc='2e-7', Na_conc='5e-2', Mg_conc='3e-3'):
+        self.t_min = t_min
+        self.t_max = t_max
+        self.t_increment = t_increment
         self.a_conc = a_conc
+        self.Na_conc = Na_conc
+        self.Mg_conc = Mg_conc
         self.unafold_path = unafold_path
         self.ram_disk = ram_disk
         self.hybrid_ss_a = [self.unafold_path + 'hybrid-ss',
@@ -605,6 +632,16 @@ class MeltingConditions():
         self.concentration_am_b = [self.unafold_path + 'concentration',
                               '-A', str(a_conc), '-B', str(a_conc),
                               '-H', '-1.1e1', '-S', '-3.4e1', 'am', 'b']
+
+    def fromYAML(self, conditions):
+        self.__init__(unafold_path=conditions['unafold_path'],
+                      ram_disk=conditions['ram_disk'],
+                      t_min=conditions['t_min'],
+                      t_max=conditions['t_max'],
+                      t_increment=conditions['t_increment'],
+                      a_conc=conditions['a_conc'],
+                      Na_conc=conditions['Na_conc'],
+                      Mg_conc=conditions['Mg_conc'],)
 
 
 def calc_t_at_conc(concs, mpoints):
